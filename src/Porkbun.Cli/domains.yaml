@@ -1,0 +1,13 @@
+domains:
+  - name: 'dice.monster'
+    subdomains:
+      '':
+        'A': '$PING_IP'
+  - name: 'rod.rip'
+    subdomains:
+      'nextcloud':
+        'A' : '$PING_IP'
+      'vault':
+        'A' : '$PING_IP'
+      'vpn':
+        'A' : '$PING_IP'
