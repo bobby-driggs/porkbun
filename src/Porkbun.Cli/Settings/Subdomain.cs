@@ -6,9 +6,10 @@ using System.Threading.Tasks;
 
 namespace Porkbun.Cli.Settings
 {
-	public class Domain
-	{
+	public class Subdomain
+    {
 		public string Name { get; init; }
-		public List<Subdomain> Subdomains { get; init; }
+		public string Type { get; init; }
+		public string Content { get; init; }
 	}
 }

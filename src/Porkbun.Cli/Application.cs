@@ -7,107 +7,117 @@ using System.Text.Json;
 namespace Porkbun.Cli
 {
     public class Application
-	{
-		private readonly ILogger<Application> Logger;
-		private readonly IPorkbunClient PorkbunClient;
-		private readonly IHostEnvironment HostEnvironment;
-		private readonly ApplicationSettings Settings;
-		private readonly IReadOnlyList<Domain> Domains;
+    {
+        private readonly ILogger<Application> Logger;
+        private readonly IPorkbunClient PorkbunClient;
+        private readonly IHostEnvironment HostEnvironment;
+        private readonly ApplicationSettings Settings;
+        private readonly IReadOnlyList<Domain> Domains;
 
-		public Application(
-			ILogger<Application> logger,
-			IPorkbunClient porkbunClient,
-			IHostEnvironment hostEnvironment,
-			IOptionsMonitor<ApplicationSettings> applicationOptions,
-			IOptionsMonitor<DomainSettings> domainOptions)
-		{
-			Logger = logger;
-			PorkbunClient = porkbunClient;
-			HostEnvironment = hostEnvironment;
-			Settings = applicationOptions.CurrentValue;
-			Domains = domainOptions.CurrentValue.Domains;
-		}
+        public Application(
+            ILogger<Application> logger,
+            IPorkbunClient porkbunClient,
+            IHostEnvironment hostEnvironment,
+            IOptionsMonitor<ApplicationSettings> applicationOptions,
+            IOptionsMonitor<DomainSettings> domainOptions)
+        {
+            Logger = logger;
+            PorkbunClient = porkbunClient;
+            HostEnvironment = hostEnvironment;
+            Settings = applicationOptions.CurrentValue;
+            Domains = domainOptions.CurrentValue.Domains;
+        }
 
-		public async Task ExecuteAsync(CancellationToken cancellationToken)
-		{
-			if (!Domains.Any())
-			{
-				Logger.LogWarning("Empty domain file");
-				return;
-			}
+        public async Task ExecuteAsync(CancellationToken cancellationToken)
+        {
+            if (!Domains.Any())
+            {
+                Logger.LogWarning("Empty domain file");
+                return;
+            }
 
-			var shouldSave = false;
-			var pingFilePath = Settings.PingFile;
-			if (!Path.IsPathFullyQualified(Settings.PingFile))
-			{
-				pingFilePath = Path.Join(HostEnvironment.ContentRootPath, Settings.PingFile);
-			}
+            var shouldSave = false;
+            var pingFilePath = Settings.PingFile!;
+            if (!Path.IsPathFullyQualified(Settings.PingFile!))
+            {
+                pingFilePath = Path.Join(HostEnvironment.ContentRootPath, Settings.PingFile);
+            }
 
-			if (!File.Exists(pingFilePath))
-			{
-				using var _ = File.Create(pingFilePath);
-			}
+            if (!File.Exists(pingFilePath))
+            {
+                using var _ = File.Create(pingFilePath);
+            }
 
-			var pingFile = new PingFile();
+            var pingFile = new PingFile();
 
-			var pingFileContents = await File.ReadAllTextAsync(pingFilePath, cancellationToken);
-			if (!string.IsNullOrWhiteSpace(pingFileContents))
-			{
-				pingFile = JsonSerializer.Deserialize<PingFile?>(pingFileContents);
+            var pingFileContents = await File.ReadAllTextAsync(pingFilePath, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(pingFileContents))
+            {
+                pingFile = JsonSerializer.Deserialize<PingFile?>(pingFileContents);
 
-				Logger.LogInformation("Ping file found! {ipAddress}", pingFile!.IpAddress);
-			}
-			
-			if (pingFile?.DateLastModified.AddSeconds(pingFile?.PingCacheTtl ?? 900) <= DateTimeOffset.UtcNow)
-			{
-				Logger.LogInformation("Re-pinging...");
-				var pingResponse = await PorkbunClient.PingAsync(cancellationToken);
+                Logger.LogInformation("Ping file found! {ipAddress}", pingFile!.IpAddress);
+            }
 
-				Logger.LogInformation("Ping Complete! {ipAddress}", pingResponse.YourIp);
+            if (pingFile?.DateLastModified.AddSeconds(pingFile?.PingCacheTtl ?? 900) <= DateTimeOffset.UtcNow)
+            {
+                Logger.LogInformation("Re-pinging...");
+                var pingResponse = await PorkbunClient.PingAsync(cancellationToken);
 
-				pingFile.DateLastModified = DateTimeOffset.UtcNow;
-				pingFile.IpAddress = pingResponse.YourIp.ToString();
-				pingFile.PingCacheTtl = Settings.PingCacheTtl;
+                Logger.LogInformation("Ping Complete! {ipAddress}", pingResponse.YourIp);
 
-				shouldSave = true;
-			}
+                pingFile.DateLastModified = DateTimeOffset.UtcNow;
+                pingFile.IpAddress = pingResponse.YourIp!.ToString();
+                pingFile.PingCacheTtl = Settings.PingCacheTtl;
 
-			if (shouldSave)
-			{
-				Logger.LogInformation("Saving ping file!");
-				pingFileContents = JsonSerializer.Serialize(pingFile);
-				await File.WriteAllTextAsync(pingFilePath, pingFileContents, cancellationToken);
-			}
+                shouldSave = true;
+            }
 
-			foreach (var domain in Domains)
-			{
-				Logger.LogInformation($"{domain.Name} - {domain.Subdomains.Count} subdomains");
+            if (shouldSave)
+            {
+                Logger.LogInformation("Saving ping file!");
+                pingFileContents = JsonSerializer.Serialize(pingFile);
+                await File.WriteAllTextAsync(pingFilePath, pingFileContents, cancellationToken);
+            }
 
-				foreach (var subdomain in domain.Subdomains)
-				{
+            foreach (var domain in Domains)
+            {
+                Logger.LogInformation($"{domain.Name} - {domain.Subdomains.Count} subdomains");
 
-					Logger.LogInformation($"{subdomain.Key} - {subdomain.Value.Count} dns entries");
-					
-					foreach (var dnsEntry in subdomain.Value)
-					{
-						var content = ReplaceForPingIp(dnsEntry.Value, pingFile!.IpAddress.ToString());
-						Logger.LogInformation($"Updating {subdomain.Key}.{domain.Name} - {dnsEntry.Key}:{content}");
-						var result = await PorkbunClient.UpdateSubdomainAsync(domain.Name, subdomain.Key, dnsEntry.Key, content, cancellationToken);
+                var existingRecords = await PorkbunClient.GetDnsRecordsForDomainsAsync(domain.Name, cancellationToken);
 
-						if (!result.Success)
-						{
-							Logger.LogError(result.Message);
-							return;
-						}
-					}
+                if (!existingRecords.Success)
+                {
+                    Logger.LogError($"Failed to get DNS Recorsd for domain: {domain.Name}. Skipping");
+                    continue;
+                }
 
-				}
-			}
-		}
+                foreach (var subdomain in domain.Subdomains)
+                {
+                    Logger.LogInformation($"Processing {subdomain.Name}");
 
-		private string ReplaceForPingIp(string value, string pingIp)
-		{
-			return value.Replace("$PING_IP", pingIp);
-		}
-	}
+                    var fullname = subdomain.Name == string.Empty
+                        ? domain.Name
+                        : $"{subdomain.Name}.{domain.Name}";
+
+                    var content = ReplaceForPingIp(subdomain.Content, pingFile!.IpAddress.ToString());
+
+                    var existingRecord = existingRecords.Records.FirstOrDefault(uu => uu.Name == fullname && uu.Type == subdomain.Type);
+                    if (existingRecord != null)
+                    {
+                        Logger.LogInformation($"Updating {fullname}'s {subdomain.Type} record to {content} via Id: {existingRecord.Id}");
+                        var updateResult = await PorkbunClient.UpdateRecordByIdAsync(domain.Name, existingRecord.Id, subdomain.Name, subdomain.Type, content, cancellationToken);
+                        if (!updateResult.Success)
+                        {
+                            Logger.LogWarning($"Enable to update {fullname}. Reason: {updateResult.Message}");
+                        }
+                    }
+                }
+            }
+        }
+
+        private string ReplaceForPingIp(string value, string pingIp)
+        {
+            return value.Replace("$PING_IP", pingIp);
+        }
+    }
 }

@@ -1,10 +1,8 @@
-using Microsoft.Extensions.Configuration;
 using Porkbun.Cli;
 using Porkbun.Cli.Services;
 using Porkbun.Cli.Settings;
-using YamlDotNet;
 
-ILogger<Program> Logger = null;
+ILogger<Program>? Logger = null;
 var cancellationTokenSource = new CancellationTokenSource();
 
 Console.CancelKeyPress += Console_CancelKeyPress;
@@ -45,11 +43,10 @@ Logger.LogDebug("Application run");
 
 await app.ExecuteAsync(cancellationTokenSource.Token);
 
-
 Logger.LogDebug("Application complete!");
 
 void Console_CancelKeyPress(object? sender, ConsoleCancelEventArgs e)
 {
-	Logger.LogDebug("Cancel requested!");
+	Logger?.LogDebug("Cancel requested!");
 	cancellationTokenSource.Cancel();
 }

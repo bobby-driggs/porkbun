@@ -8,79 +8,140 @@ using System.Threading;
 
 namespace Porkbun.Cli.Services
 {
-	public interface IPorkbunClient
-	{
-		Task<PingResponse> PingAsync(CancellationToken cancellationToken);
-		Task<ResponseBase> UpdateSubdomainAsync(string domain, string subdomain, string recordType, string content, CancellationToken cancellationToken);
-	}
+    public interface IPorkbunClient
+    {
+        Task<PingResponse> PingAsync(CancellationToken cancellationToken);
+        Task<ResponseBase> UpdateSubdomainAsync(string domain, string subdomain, string recordType, string content, CancellationToken cancellationToken);
+        Task<RetrieveDomainResponse> GetDnsRecordsForDomainsAsync(string domain, CancellationToken cancellationToken);
+        Task<ResponseBase> UpdateRecordByIdAsync(string domain, string id, string subdomain, string recordType, string content, CancellationToken cancellationToken);
+    }
 
-	public class PorkbunClient : ServiceBase, IPorkbunClient
-	{
-		private readonly JsonSerializerOptions JsonSerializerOptions;
-		private readonly PorkbunSettings Settings;
-		public PorkbunClient(IHttpClientFactory httpClientFactory, ILogger<PorkbunClient> logger, IOptionsMonitor<PorkbunSettings> options)
-			: base(httpClientFactory, logger)
-		{
-			JsonSerializerOptions = new JsonSerializerOptions()
-			{
-				PropertyNameCaseInsensitive = true,
-				NumberHandling = JsonNumberHandling.AllowReadingFromString,
-			};
-			Settings = options.CurrentValue;
-		}
+    public class PorkbunClient : ServiceBase, IPorkbunClient
+    {
+        private readonly JsonSerializerOptions JsonSerializerOptions;
+        private readonly PorkbunSettings Settings;
 
-		public async Task<PingResponse> PingAsync(CancellationToken cancellationToken)
-		{
-			var payload = new SecureRequest
-			{
-				ApiKey = Settings.ApiKey!,
-				ApiSecret = Settings.ApiSecret!,
-			};
+        public PorkbunClient(IHttpClientFactory httpClientFactory, ILogger<PorkbunClient> logger, IOptionsMonitor<PorkbunSettings> options)
+            : base(httpClientFactory, logger)
+        {
+            JsonSerializerOptions = new JsonSerializerOptions()
+            {
+                PropertyNameCaseInsensitive = true,
+                NumberHandling = JsonNumberHandling.AllowReadingFromString,
+            };
+            Settings = options.CurrentValue;
+        }
 
-			var uri = new Uri(Settings.ApiUri!, "ping");
-			var httpRequest = new HttpRequestMessage(HttpMethod.Post, uri)
-			{
-				Content = JsonContent.Create(payload)
-			};
+        public async Task<PingResponse> PingAsync(CancellationToken cancellationToken)
+        {
+            var payload = new SecureRequest
+            {
+                ApiKey = Settings.ApiKey!,
+                ApiSecret = Settings.ApiSecret!,
+            };
 
-			var response = await ProcessRequestAsync(
-				async (httpClient) =>
-				{
-					return await httpClient.SendAsync(httpRequest, cancellationToken);
-				}, (content) =>
-				{
-					return JsonSerializer.Deserialize<PingResponse>(content, JsonSerializerOptions);
-				});
+            var uri = new Uri(Settings.ApiUri!, "ping");
+            var httpRequest = new HttpRequestMessage(HttpMethod.Post, uri)
+            {
+                Content = JsonContent.Create(payload)
+            };
 
-			return response!;
-		}
+            var response = await ProcessRequestAsync(
+                async (httpClient) =>
+                {
+                    return await httpClient.SendAsync(httpRequest, cancellationToken);
+                }, (content) =>
+                {
+                    return JsonSerializer.Deserialize<PingResponse>(content, JsonSerializerOptions);
+                });
 
-		public async Task<ResponseBase> UpdateSubdomainAsync(string domain, string subdomain, string recordType, string content, CancellationToken cancellationToken)
-		{
-			var payload = new UpdateSubdomainRequest
-			{
-				ApiKey = Settings.ApiKey!,
-				ApiSecret = Settings.ApiSecret!,
-				Content = content,
-				Ttl = 900,
-			};
+            return response!;
+        }
 
-			var uri = new Uri(Settings.ApiUri!, $"dns/editByNameType/{domain}/{recordType}/{subdomain}");
-			var httpRequest = new HttpRequestMessage(HttpMethod.Post, uri)
-			{
-				Content = JsonContent.Create(payload)
-			};
+        public async Task<ResponseBase> UpdateSubdomainAsync(string domain, string subdomain, string recordType, string content, CancellationToken cancellationToken)
+        {
+            var payload = new UpdateSubdomainRequest
+            {
+                ApiKey = Settings.ApiKey!,
+                ApiSecret = Settings.ApiSecret!,
+                Content = content,
+                Ttl = 900,
+            };
 
-			var response = await ProcessRequestAsync(
-				async (httpClient) =>
-				{
-					return await httpClient.SendAsync(httpRequest, cancellationToken);
-				}, (content) =>
-				{
-					return JsonSerializer.Deserialize<ResponseBase>(content, JsonSerializerOptions);
-				});
+            var uri = new Uri(Settings.ApiUri!, $"dns/editByNameType/{domain}/{recordType}/{subdomain}");
+            var httpRequest = new HttpRequestMessage(HttpMethod.Post, uri)
+            {
+                Content = JsonContent.Create(payload)
+            };
 
-			return response!;
-		}
-	}
+            var response = await ProcessRequestAsync(
+                async (httpClient) =>
+                {
+                    return await httpClient.SendAsync(httpRequest, cancellationToken);
+                }, (content) =>
+                {
+                    return JsonSerializer.Deserialize<ResponseBase>(content, JsonSerializerOptions);
+                });
+
+            return response!;
+        }
+
+        public async Task<ResponseBase> UpdateRecordByIdAsync(string domain, string id, string subdomain, string recordType, string content, CancellationToken cancellationToken)
+        {
+            var payload = new UpdateByIdRequest
+            {
+                ApiKey = Settings.ApiKey!,
+                ApiSecret = Settings.ApiSecret!,
+                Name = subdomain,
+                Type = recordType,
+                Content = content,
+                Ttl = 900,
+            };
+
+            var uri = new Uri(Settings.ApiUri!, $"dns/edit/{domain}/{id}");
+            var httpRequest = new HttpRequestMessage(HttpMethod.Post, uri)
+            {
+                Content = JsonContent.Create(payload)
+            };
+
+            var response = await ProcessRequestAsync(
+                async (httpClient) =>
+                {
+                    return await httpClient.SendAsync(httpRequest, cancellationToken);
+                }, (content) =>
+                {
+                    return JsonSerializer.Deserialize<ResponseBase>(content, JsonSerializerOptions);
+                });
+
+            return response!;
+        }
+
+        public async Task<RetrieveDomainResponse> GetDnsRecordsForDomainsAsync(string domain, CancellationToken cancellationToken)
+        {
+            var payload = new UpdateSubdomainRequest
+            {
+                ApiKey = Settings.ApiKey!,
+                ApiSecret = Settings.ApiSecret!,
+            };
+
+            var uri = new Uri(Settings.ApiUri!, $"dns/retrieve/{domain}");
+
+            var httpRequest = new HttpRequestMessage(HttpMethod.Post, uri)
+            {
+                Content = JsonContent.Create(payload)
+            };
+
+            var response = await ProcessRequestAsync(
+                async (httpClient) =>
+                {
+                    return await httpClient.SendAsync(httpRequest, cancellationToken);
+                }, (content) =>
+                {
+                    return JsonSerializer.Deserialize<RetrieveDomainResponse>(content, JsonSerializerOptions);
+                });
+
+            return response!;
+        }
+
+    }
 }
